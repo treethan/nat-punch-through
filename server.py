@@ -1,10 +1,18 @@
+import argparse
+import datetime
 import socket
+
+DEFAULT_HOST = ''
+DEFAULT_PORT = 50007
+DEFAULT_TIMEOUT = 6.0
 
 waiting_clients = []
 
+
 class Client:
-    def __init__(self, addr):
+    def __init__(self, addr, host=False):
         self.address = addr
+        self.isHost = host
 
 
 def handle_client_message(sock, data, addr):
@@ -15,6 +23,7 @@ def handle_client_message(sock, data, addr):
         client = Client(addr)
         waiting_clients.append(client)
         print(f"[INFO] Client added: {addr}")
+        sock.sendto(f"ACK:Connected".encode(), addr)
         
         if len(waiting_clients) >= 2:
             c1 = waiting_clients.pop(0)
@@ -27,28 +36,45 @@ def handle_client_message(sock, data, addr):
 
 
 
-def server_loop():
-    print(f"[START] Beginning server start-up")
-
-    HOST = ''
-    PORT = 50007
-
+def server_loop(HOST, PORT, socket_timeout):
+    print(f"[START] Beginning server start-up...")
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.bind((HOST, PORT))
-        s.settimeout(1.0)
+        try:
+            s.bind((HOST, PORT))
+        except OverflowError as msg:
+            print(msg)
+            exit()
+        except socket.error as msg:
+            print(msg)
+            exit()
 
-        print(f"[INFO] NAT punchthrough server running on UDP port {PORT}")
+        s.settimeout(socket_timeout)
+
+        h = '0.0.0.0' if HOST == '' else HOST
+
+        print(f"[INFO] NAT punchthrough server running on UDP port {h}:{PORT}")
 
         while True:
             try:
                 data, address = s.recvfrom(1024)
                 handle_client_message(s, data, address)
-            except TimeoutError:
-                pass  # Allow interrupts from console
-            except KeyboardInterrupt:
-                print("[EXIT]")
-                break
+            except socket.timeout or TimeoutError:
+                # Allow interrupts from console
+                try:
+                    print(f"[INFO] No data received within timeout: {datetime.datetime.now()}")
+                except KeyboardInterrupt:
+                    print("[EXIT] KeyboardInterrupt")
+                    exit()
 
 
 if __name__ == '__main__':
-    server_loop()
+    parser = argparse.ArgumentParser(description='Simple NAT punchthrough server')
+    parser.add_argument('-H','--host', default=DEFAULT_HOST,
+                        help='Host/IPv4 address to bind to (default: all interfaces)')
+    parser.add_argument('-p', '--port', type=int, default=DEFAULT_PORT,
+                        help='UDP port to bind to (default: 50007)')
+    parser.add_argument('-t', '--timeout', type=float, default=DEFAULT_TIMEOUT,
+                        help='Socket timeout in seconds (default: 1.0)')
+    args = parser.parse_args()
+
+    server_loop(args.host, args.port, args.timeout)
