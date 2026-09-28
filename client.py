@@ -1,5 +1,6 @@
 import socket
 import sys
+import threading
 import time
 
 HOST = '127.0.0.1'
@@ -9,9 +10,67 @@ PROBE_TIMEOUT = 10
 SERVER_CONNECTION_TIMEOUT = 10
 
 
-def chat(sock, addr):
-    print("Pairing successful. Begin chat...")
-    input()
+def chat_receiver(s: socket.socket, addr: tuple[str, int], stop: threading.Event):
+    while True:
+        if stop.is_set():
+            return
+
+        try:
+            data, address = s.recvfrom(1024)
+            if address != addr:  # Filter non-peer
+                continue
+            msg = data.decode().split(":", 1)  # "CHAT:Hello world!"
+            if msg[0] == "CHAT":
+                print(f"[MESSAGE] {msg[1]}")
+            elif msg[0] == "PUNCH":
+                s.sendto(b"PUNCH_ACK", addr)
+            elif msg[0] == "BYE":
+                print("[EXIT] Peer has left the chat")
+                stop.set()
+        except TimeoutError:
+            pass
+        except ConnectionResetError:
+            pass
+        except ValueError:
+            pass
+        except IndexError:
+            pass
+        except Exception as e:
+            print(f"[ERROR] {e}")
+            stop.set()
+
+
+def chat(sock: socket.socket, addr):
+    print("[INFO] Pairing successful. Begin chatting:")
+    stop_event = threading.Event()
+    t = threading.Thread(target=chat_receiver, args=(sock, addr, stop_event), daemon=True)
+    t.start()
+
+    while True:
+        if stop_event.is_set():
+            break
+        try:
+            i: str = input()
+            if stop_event.is_set():
+                break
+            if i == "/quit":
+                sock.sendto(b"BYE", addr)
+                stop_event.set()
+                break
+            if i == "":
+                continue
+            i = "CHAT:" + i
+            sock.sendto(i.encode(), addr)
+        except (KeyboardInterrupt, EOFError):
+            print("[INFO] Input closed")
+            sock.sendto(b"BYE", addr)
+            stop_event.set()
+            break
+        except ConnectionResetError:
+            pass
+    
+    t.join()
+    sys.exit()
 
 
 def client_loop():
