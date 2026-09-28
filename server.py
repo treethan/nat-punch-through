@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import socket
+import sys
 
 DEFAULT_HOST = ''
 DEFAULT_PORT = 50007
@@ -16,23 +17,25 @@ class Client:
 
 
 def handle_client_message(sock, data, addr):
-    msg = data.decode().strip()
+    try:
+        msg = data.decode().strip()
 
-    print(f"[RECV] {addr}: {msg}")
-    if msg == "CONNECT":
-        client = Client(addr)
-        waiting_clients.append(client)
-        print(f"[INFO] Client added: {addr}")
-        sock.sendto(f"ACK:Connected".encode(), addr)
-        
-        if len(waiting_clients) >= 2:
-            c1 = waiting_clients.pop(0)
-            c2 = waiting_clients.pop(0)
+        print(f"[RECV] {addr}: {msg}")
+        if msg == "CONNECT":
+            # Client already exists
+            if any(c.address == addr for c in waiting_clients):
+                print("[INFO] Client already exists, resending ACK")
+                sock.sendto(b"ACK:Connected", addr)
+                return
 
-            print(f"[MATCH] Pairing {c1.address} <-> {c2.address}")
+            # Add new client
+            client = Client(addr)
+            waiting_clients.append(client)
+            print(f"[INFO] Client added: {addr}")
+            sock.sendto(b"ACK:Connected", addr)
+    except UnicodeDecodeError:
+        print("[ERROR] Could not decode client message")
 
-            sock.sendto(f"PEER:{c2.address[0]}:{c2.address[1]}".encode(), c1.address)
-            sock.sendto(f"PEER:{c1.address[0]}:{c1.address[1]}".encode(), c2.address) 
 
 
 
@@ -42,11 +45,9 @@ def server_loop(HOST, PORT, socket_timeout):
         try:
             s.bind((HOST, PORT))
         except OverflowError as msg:
-            print(msg)
-            exit()
+            sys.exit(msg)
         except socket.error as msg:
-            print(msg)
-            exit()
+            sys.exit(msg)
 
         s.settimeout(socket_timeout)
 
@@ -58,13 +59,22 @@ def server_loop(HOST, PORT, socket_timeout):
             try:
                 data, address = s.recvfrom(1024)
                 handle_client_message(s, data, address)
-            except socket.timeout or TimeoutError:
-                # Allow interrupts from console
-                try:
-                    print(f"[INFO] No data received within timeout: {datetime.datetime.now()}")
-                except KeyboardInterrupt:
-                    print("[EXIT] KeyboardInterrupt")
-                    exit()
+                if len(waiting_clients) >= 2:
+                    c1 = waiting_clients.pop(0)
+                    c2 = waiting_clients.pop(0)
+
+                    print(f"[MATCH] Pairing {c1.address} <-> {c2.address}")
+
+                    s.sendto(f"PEER:{c2.address[0]}:{c2.address[1]}".encode(), c1.address)
+                    s.sendto(f"PEER:{c1.address[0]}:{c1.address[1]}".encode(), c2.address)
+            except TimeoutError:
+                print(f"[INFO] No data received within timeout: {datetime.datetime.now()}")
+            except ConnectionResetError:
+                print("[ERROR] Connection was reset")
+            except KeyboardInterrupt:
+                print("[EXIT] KeyboardInterrupt")
+                sys.exit()
+            
 
 
 if __name__ == '__main__':
