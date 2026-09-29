@@ -67,7 +67,7 @@ def server_loop(HOST, PORT, socket_timeout):
 
                     s.sendto(f"PEER:{c2.address[0]}:{c2.address[1]}".encode(), c1.address)
                     s.sendto(f"PEER:{c1.address[0]}:{c1.address[1]}".encode(), c2.address)
-            except TimeoutError:
+            except (socket.timeout, TimeoutError):
                 print(f"[INFO] No data received within timeout: {datetime.datetime.now()}")
             except ConnectionResetError:
                 print("[ERROR] Connection was reset")
