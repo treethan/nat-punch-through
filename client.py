@@ -29,7 +29,7 @@ def chat_receiver(s: socket.socket, addr: Address, stop: threading.Event):
             elif msg[0] == "PUNCH":
                 s.sendto(b"PUNCH_ACK", addr)
             elif msg[0] == "BYE":
-                print("[EXIT] Peer has left the chat")
+                print("[EXIT] Peer has left the chat. Press Enter to exit")
                 stop.set()
         except TimeoutError:
             pass
@@ -45,7 +45,7 @@ def chat_receiver(s: socket.socket, addr: Address, stop: threading.Event):
 
 
 def chat(s: socket.socket, address: Address):
-    print("[INFO] Pairing successful. Begin chatting:")
+    print("[INFO] Pairing successful. Begin chatting. Type a message and press Enter to send. Type /quit to exit")
     stop_event = threading.Event()
     t = threading.Thread(target=chat_receiver, args=(s, address, stop_event), daemon=True)
     t.start()
@@ -93,9 +93,9 @@ def client_loop(HOST: str, PORT: int, socket_timeout: float, socket_punch_timeou
         connection_attempt_start_time = time.monotonic()
 
         while True:
-            if not registered and time.monotonic() - connection_attempt_start_time >= SERVER_CONNECTION_TIMEOUT:
-                sys.exit("[EXIT] Connection to server timed out")
             try:
+                if not registered and time.monotonic() - connection_attempt_start_time >= SERVER_CONNECTION_TIMEOUT:
+                    sys.exit("[EXIT] Connection to server timed out")
                 data, address = s.recvfrom(1024)
 
                 if address != (HOST, PORT):  # Filter non-server
