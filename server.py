@@ -7,14 +7,13 @@ DEFAULT_HOST = ''
 DEFAULT_PORT = 50007
 DEFAULT_TIMEOUT = 6.0
 
-waiting_clients: list[Client] = []
-
 
 class Client:
     def __init__(self, address: tuple[str, int], isHost:bool=False):
         self.address = address
         self.isHost = isHost
 
+waiting_clients: list[Client] = []
 
 def server_loop(HOST: str, PORT: int, socket_timeout: float):
     print(f"[START] Beginning server start-up...")
