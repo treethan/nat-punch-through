@@ -7,58 +7,34 @@ DEFAULT_HOST = ''
 DEFAULT_PORT = 50007
 DEFAULT_TIMEOUT = 6.0
 
-waiting_clients = []
+waiting_clients: list[Client] = []
 
 
 class Client:
-    def __init__(self, addr, host=False):
-        self.address = addr
-        self.isHost = host
+    def __init__(self, address: tuple[str, int], isHost:bool=False):
+        self.address = address
+        self.isHost = isHost
 
 
-def handle_client_message(sock, data, addr):
-    try:
-        msg = data.decode().strip()
-
-        print(f"[RECV] {addr}: {msg}")
-        if msg == "CONNECT":
-            # Client already exists
-            if any(c.address == addr for c in waiting_clients):
-                print("[INFO] Client already exists, resending ACK")
-                sock.sendto(b"ACK:Connected", addr)
-                return
-
-            # Add new client
-            client = Client(addr)
-            waiting_clients.append(client)
-            print(f"[INFO] Client added: {addr}")
-            sock.sendto(b"ACK:Connected", addr)
-    except UnicodeDecodeError:
-        print("[ERROR] Could not decode client message")
-
-
-
-
-def server_loop(HOST, PORT, socket_timeout):
+def server_loop(HOST: str, PORT: int, socket_timeout: float):
     print(f"[START] Beginning server start-up...")
+
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.settimeout(socket_timeout)
         try:
             s.bind((HOST, PORT))
         except OverflowError as msg:
-            sys.exit(msg)
+            sys.exit(str(msg))
         except socket.error as msg:
-            sys.exit(msg)
+            sys.exit(str(msg))
 
-        s.settimeout(socket_timeout)
-
-        h = '0.0.0.0' if HOST == '' else HOST
-
-        print(f"[INFO] NAT punchthrough server running on UDP port {h}:{PORT}")
+        print(f"[INFO] NAT punchthrough server running on UDP port {socket.gethostbyname(HOST)}:{PORT}")
 
         while True:
             try:
                 data, address = s.recvfrom(1024)
                 handle_client_message(s, data, address)
+
                 if len(waiting_clients) >= 2:
                     c1 = waiting_clients.pop(0)
                     c2 = waiting_clients.pop(0)
@@ -68,13 +44,40 @@ def server_loop(HOST, PORT, socket_timeout):
                     s.sendto(f"PEER:{c2.address[0]}:{c2.address[1]}".encode(), c1.address)
                     s.sendto(f"PEER:{c1.address[0]}:{c1.address[1]}".encode(), c2.address)
             except (socket.timeout, TimeoutError):
-                print(f"[INFO] No data received within timeout: {datetime.datetime.now()}")
+                try:
+                    print(f"[INFO] No data received within timeout: {datetime.datetime.now()}")
+                except KeyboardInterrupt:
+                    # Without this except, program fails to exit gracefully
+                    print("[EXIT] KeyboardInterrupt")
+                    sys.exit()
             except ConnectionResetError:
                 print("[ERROR] Connection was reset")
-            except KeyboardInterrupt:
+            except KeyboardInterrupt:  # TODO: Is this ever reached if interrupts are detected on timeouts?
                 print("[EXIT] KeyboardInterrupt")
                 sys.exit()
-            
+
+
+def handle_client_message(s: socket.socket, data: bytes, client_address: tuple[str, int]):
+    try:
+        msg = data.decode().strip()
+
+        print(f"[RECV] {client_address}: {msg}")
+
+        if msg == "CONNECT":
+            # Client already exists
+            if any(c.address == client_address for c in waiting_clients):
+                print("[INFO] Client already exists, resending ACK")
+                s.sendto(b"ACK:Connected", client_address)
+                return
+
+            # Add new client
+            client = Client(client_address)
+            waiting_clients.append(client)
+            print(f"[INFO] Client added: {client_address}")
+            print(f"[INFO] Sending ACK to {client_address}")
+            s.sendto(b"ACK:Connected", client_address)
+    except UnicodeDecodeError:
+        print("[ERROR] Could not decode client message")
 
 
 if __name__ == '__main__':
